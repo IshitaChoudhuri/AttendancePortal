@@ -4,79 +4,85 @@ import face_recognition
 import os
 from datetime import datetime
 
-# from PIL import ImageGrab
+# Path for storing training images
+training_path = 'Training_images'
 
-path = 'Training_images'
-images = []
-classNames = []
-myList = os.listdir(path)
-print(myList)
-for cl in myList:
-    curImg = cv2.imread(f'{path}/{cl}')
-    images.append(curImg)
-    classNames.append(os.path.splitext(cl)[0])
-print(classNames)
-
+# List to keep track of marked attendance
+marked_names = []
 
 def findEncodings(images):
     encodeList = []
-
-
     for img in images:
+        img = cv2.resize(img, (0, 0), fx=0.25, fy=0.25)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        encode = face_recognition.face_encodings(img)[0]
-        encodeList.append(encode)
+        face_locations = face_recognition.face_locations(img, model='cnn')
+        if len(face_locations) > 0:
+            face_encoding = face_recognition.face_encodings(img, known_face_locations=face_locations)[0]
+            encodeList.append(face_encoding)
     return encodeList
 
-
 def markAttendance(name):
-    with open('Attendance.csv', 'r+') as f:
-        myDataList = f.readlines()
-        nameList = [line.split(',')[0] for line in myDataList]  # Extracting names from existing lines
+    try:
+        file_path = 'Attendance.csv'
+        with open(file_path, 'a+') as f:  # Open file in append mode
+            if name not in marked_names:
+                now = datetime.now()
+                dtString = now.strftime('%H:%M:%S')
+                f.write(f'\n{name},{dtString}')
+                marked_names.append(name)  # Add the name to the marked list
+    except Exception as e:
+        print(f"Error: {e}")
 
-        if name not in nameList:
-            now = datetime.now()
-            dtString = now.strftime('%H:%M:%S')
-            f.seek(0, 2)  # Move the file pointer to the end of the file
-            f.write(f'\n{name},{dtString}')
+def load_training_data():
+    images = []
+    classNames = []
+    for root, dirs, files in os.walk(training_path):
+        for name in dirs:
+            person_folder = os.path.join(root, name)
+            for file in os.listdir(person_folder):
+                if file.endswith('.jpg') or file.endswith('.jpeg') or file.endswith('.png'):
+                    img_path = os.path.join(person_folder, file)
+                    cur_img = cv2.imread(img_path)
+                    images.append(cur_img)
+                    classNames.append(name)
+    return images, classNames
 
+def main():
+    images, classNames = load_training_data()
 
+    encodeListKnown = findEncodings(images)
+    print('Encoding Complete')
 
-#### FOR CAPTURING SCREEN RATHER THAN WEBCAM
-# def captureScreen(bbox=(300,300,690+300,530+300)):
-#     capScr = np.array(ImageGrab.grab(bbox))
-#     capScr = cv2.cvtColor(capScr, cv2.COLOR_RGB2BGR)
-#     return capScr
+    cap = cv2.VideoCapture(0)
 
-encodeListKnown = findEncodings(images)
-print('Encoding Complete')
+    while True:
+        success, img = cap.read()
+        imgS = cv2.resize(img, (0, 0), None, 0.25, 0.25)
+        imgS = cv2.cvtColor(imgS, cv2.COLOR_BGR2RGB)
 
-cap = cv2.VideoCapture(0)
+        facesCurFrame = face_recognition.face_locations(imgS, model='cnn')
+        encodesCurFrame = face_recognition.face_encodings(imgS, facesCurFrame)
 
-while True:
-    success, img = cap.read()
-# img = captureScreen()
-    imgS = cv2.resize(img, (0, 0), None, 0.25, 0.25)
-    imgS = cv2.cvtColor(imgS, cv2.COLOR_BGR2RGB)
+        for encodeFace, faceLoc in zip(encodesCurFrame, facesCurFrame):
+            matches = face_recognition.compare_faces(encodeListKnown, encodeFace)
+            faceDis = face_recognition.face_distance(encodeListKnown, encodeFace)
+            matchIndex = np.argmin(faceDis)
 
-    facesCurFrame = face_recognition.face_locations(imgS)
-    encodesCurFrame = face_recognition.face_encodings(imgS, facesCurFrame)
+            if matches[matchIndex]:
+                name = classNames[matchIndex].upper()
+                y1, x2, y2, x1 = faceLoc
+                y1, x2, y2, x1 = y1 * 4, x2 * 4, y2 * 4, x1 * 4
+                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.rectangle(img, (x1, y2 - 35), (x2, y2), (0, 255, 0), cv2.FILLED)
+                cv2.putText(img, name, (x1 + 6, y2 - 6), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
+                markAttendance(name)
 
-    for encodeFace, faceLoc in zip(encodesCurFrame, facesCurFrame):
-        matches = face_recognition.compare_faces(encodeListKnown, encodeFace)
-        faceDis = face_recognition.face_distance(encodeListKnown, encodeFace)
-# print(faceDis)
-        matchIndex = np.argmin(faceDis)
+        cv2.imshow('Webcam', img)
+        if cv2.waitKey(1) & 0xFF == ord('q'):  # Press 'q' to close webcam
+            break
 
-        if matches[matchIndex]:
-            name = classNames[matchIndex].upper()
-# print(name)
-            y1, x2, y2, x1 = faceLoc
-            y1, x2, y2, x1 = y1 * 4, x2 * 4, y2 * 4, x1 * 4
-            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.rectangle(img, (x1, y2 - 35), (x2, y2), (0, 255, 0), cv2.FILLED)
-            cv2.putText(img, name, (x1 + 6, y2 - 6), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
-            markAttendance(name)
+    cap.release()
+    cv2.destroyAllWindows()
 
-    cv2.imshow('Webcam', img)
-    cv2.waitKey(1)
+if __name__ == "__main__":
+    main()
