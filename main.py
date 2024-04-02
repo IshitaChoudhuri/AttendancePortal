@@ -10,17 +10,6 @@ training_path = 'Training_images'
 # List to keep track of marked attendance
 marked_names = []
 
-def findEncodings(images):
-    encodeList = []
-    for img in images:
-        img = cv2.resize(img, (0, 0), fx=0.25, fy=0.25)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        face_locations = face_recognition.face_locations(img, model='cnn')
-        if len(face_locations) > 0:
-            face_encoding = face_recognition.face_encodings(img, known_face_locations=face_locations)[0]
-            encodeList.append(face_encoding)
-    return encodeList
-
 def markAttendance(name):
     try:
         file_path = 'Attendance.csv'
@@ -50,7 +39,13 @@ def load_training_data():
 def main():
     images, classNames = load_training_data()
 
-    encodeListKnown = findEncodings(images)
+    encodeListKnown = []
+    for img in images:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        face_encodings = face_recognition.face_encodings(img)
+        if len(face_encodings) > 0:
+            encodeListKnown.append(face_encodings[0])
+    
     print('Encoding Complete')
 
     cap = cv2.VideoCapture(0)
@@ -60,7 +55,7 @@ def main():
         imgS = cv2.resize(img, (0, 0), None, 0.25, 0.25)
         imgS = cv2.cvtColor(imgS, cv2.COLOR_BGR2RGB)
 
-        facesCurFrame = face_recognition.face_locations(imgS, model='cnn')
+        facesCurFrame = face_recognition.face_locations(imgS)
         encodesCurFrame = face_recognition.face_encodings(imgS, facesCurFrame)
 
         for encodeFace, faceLoc in zip(encodesCurFrame, facesCurFrame):
